@@ -24,6 +24,7 @@ const OAKES_GRID = { i: 369894, j: -1220627 };
 // Player state
 let playerCoins = INITIAL_PLAYER_COINS;
 const playerPosition = { ...OAKES_GRID };
+let playerMarker: leaflet.Marker;
 
 // Cache state
 const caches: Map<string, { coins: { id: string }[] }> = new Map();
@@ -62,7 +63,7 @@ function initializeMap() {
 
 // Add player marker
 function addPlayerMarker(map: leaflet.Map) {
-  const playerMarker = leaflet.marker(gridToLatLng(playerPosition));
+  playerMarker = leaflet.marker(gridToLatLng(playerPosition)); // Initialize the marker
   playerMarker.bindTooltip("That's you!");
   playerMarker.addTo(map);
   playerMarker.setZIndexOffset(1000); // Ensure player marker is above other elements
@@ -245,11 +246,17 @@ function initializeMovementButtons(map: leaflet.Map) {
 
 // Move the player and regenerate caches
 function movePlayer(map: leaflet.Map, di: number, dj: number) {
-  playerPosition.i += di; // Modify the properties of the object
+  // Update player's position
+  playerPosition.i += di;
   playerPosition.j += dj;
-  map.setView(gridToLatLng(playerPosition), GAMEPLAY_ZOOM_LEVEL);
 
-  spawnCaches(map); // Regenerate caches for the new position
+  // Update the map's center and the player's marker
+  const newLatLng = gridToLatLng(playerPosition);
+  map.setView(newLatLng, GAMEPLAY_ZOOM_LEVEL);
+  playerMarker.setLatLng(newLatLng); // Update marker position
+
+  // Regenerate caches for the new position
+  spawnCaches(map);
 }
 
 // Initialize the status panel
