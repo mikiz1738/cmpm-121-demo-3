@@ -1,4 +1,3 @@
-//D3.a
 // @deno-types="npm:@types/leaflet@^1.9.14"
 import leaflet from "leaflet";
 
@@ -13,14 +12,14 @@ import "./leafletWorkaround.ts";
 import luck from "./luck.ts";
 
 // Constants
-const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
-
-// Gameplay parameters
-const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
 const INITIAL_PLAYER_COINS = 0;
+const GAMEPLAY_ZOOM_LEVEL = 19;
+
+// Oakes Classroom location in grid coordinates
+const OAKES_GRID = { i: 369894, j: -1220627 };
 
 // Player state
 let playerCoins = INITIAL_PLAYER_COINS;
@@ -28,10 +27,13 @@ let playerCoins = INITIAL_PLAYER_COINS;
 // Cache state
 const caches: Map<string, { coins: number }> = new Map();
 
+// Flyweight to cache grid-to-LatLng conversion
+const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
+
 // Initialize the map
 function initializeMap() {
   const map = leaflet.map(document.getElementById("map")!, {
-    center: OAKES_CLASSROOM,
+    center: gridToLatLng(OAKES_GRID),
     zoom: GAMEPLAY_ZOOM_LEVEL,
     minZoom: GAMEPLAY_ZOOM_LEVEL,
     maxZoom: GAMEPLAY_ZOOM_LEVEL,
@@ -55,12 +57,34 @@ function initializeMap() {
 
 // Add player marker
 function addPlayerMarker(map: leaflet.Map) {
-  const playerMarker = leaflet.marker(OAKES_CLASSROOM);
+  const playerMarker = leaflet.marker(gridToLatLng(OAKES_GRID));
   playerMarker.bindTooltip("That's you!");
   playerMarker.addTo(map);
 }
 
-// Spawn a single cache
+// Convert grid coordinates to LatLng
+function gridToLatLng({ i, j }: { i: number; j: number }): leaflet.LatLng {
+  const origin = leaflet.latLng(0, 0); // Null Island
+  return leaflet.latLng(
+    origin.lat + i * TILE_DEGREES,
+    origin.lng + j * TILE_DEGREES,
+  );
+}
+
+// Calculate grid cell bounds using Flyweight
+function calculateCacheBounds(i: number, j: number) {
+  const cacheKey = `${i},${j}`;
+  if (!cellLatLngCache.has(cacheKey)) {
+    const bounds = leaflet.latLngBounds([
+      gridToLatLng({ i, j }),
+      gridToLatLng({ i: i + 1, j: j + 1 }),
+    ]);
+    cellLatLngCache.set(cacheKey, bounds);
+  }
+  return cellLatLngCache.get(cacheKey)!;
+}
+
+// Spawn a single cache with unique coin identities
 function spawnCache(map: leaflet.Map, i: number, j: number) {
   const bounds = calculateCacheBounds(i, j);
   const cacheKey = `${i},${j}`;
@@ -68,28 +92,28 @@ function spawnCache(map: leaflet.Map, i: number, j: number) {
     1,
     Math.floor(luck([i, j, "coins"].toString()) * 10),
   );
-  caches.set(cacheKey, { coins: coinCount });
+
+  // Generate unique coin identities
+  const cacheCoins = Array.from({ length: coinCount }, (_, serial) => ({
+    id: `${cacheKey}#${serial}`,
+  }));
+
+  caches.set(cacheKey, { coins: cacheCoins.length });
 
   const rect = leaflet.rectangle(bounds).addTo(map);
-  rect.bindPopup(() => createCachePopup(cacheKey));
+  rect.bindPopup(() => createCachePopup(cacheKey, cacheCoins));
 }
 
-// Calculate cache bounds
-function calculateCacheBounds(i: number, j: number) {
-  const origin = OAKES_CLASSROOM;
-  return leaflet.latLngBounds([
-    [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-    [origin.lat + (i + 1) * TILE_DEGREES, origin.lng + (j + 1) * TILE_DEGREES],
-  ]);
-}
-
-// Create popup content for a cache
-function createCachePopup(cacheKey: string) {
-  const cache = caches.get(cacheKey)!;
+// Create popup content with coin identity
+function createCachePopup(cacheKey: string, cacheCoins: { id: string }[]) {
   const popupDiv = document.createElement("div");
 
   popupDiv.innerHTML = `
-    <div>Cache at ${cacheKey} contains <span id="cacheCoins">${cache.coins}</span> coins.</div>
+    <div>Cache at ${cacheKey} contains:
+      <ul id="coinList">
+        ${cacheCoins.map((coin) => `<li>${coin.id}</li>`).join("")}
+      </ul>
+    </div>
     <button id="collect">Collect</button>
     <button id="deposit">Deposit</button>`;
 
@@ -146,8 +170,16 @@ function updateStatusPanel() {
 
 // Spawn caches in the neighborhood
 function spawnCaches(map: leaflet.Map) {
-  for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-    for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
+  for (
+    let i = OAKES_GRID.i - NEIGHBORHOOD_SIZE;
+    i < OAKES_GRID.i + NEIGHBORHOOD_SIZE;
+    i++
+  ) {
+    for (
+      let j = OAKES_GRID.j - NEIGHBORHOOD_SIZE;
+      j < OAKES_GRID.j + NEIGHBORHOOD_SIZE;
+      j++
+    ) {
       if (luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY) {
         spawnCache(map, i, j);
       }
