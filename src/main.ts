@@ -25,7 +25,7 @@ const OAKES_GRID = { i: 369894, j: -1220627 };
 let playerCoins = INITIAL_PLAYER_COINS;
 
 // Cache state
-const caches: Map<string, { coins: number }> = new Map();
+const caches: Map<string, { coins: { id: string }[] }> = new Map();
 
 // Flyweight to cache grid-to-LatLng conversion
 const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
@@ -98,20 +98,25 @@ function spawnCache(map: leaflet.Map, i: number, j: number) {
     id: `${cacheKey}#${serial}`,
   }));
 
-  caches.set(cacheKey, { coins: cacheCoins.length });
+  caches.set(cacheKey, { coins: cacheCoins });
 
   const rect = leaflet.rectangle(bounds).addTo(map);
-  rect.bindPopup(() => createCachePopup(cacheKey, cacheCoins));
+  rect.bindPopup(() => createCachePopup(cacheKey));
 }
 
 // Create popup content with coin identity
-function createCachePopup(cacheKey: string, cacheCoins: { id: string }[]) {
+function createCachePopup(cacheKey: string) {
   const popupDiv = document.createElement("div");
+
+  const cache = caches.get(cacheKey);
+  const coinListHtml = cache?.coins
+    .map((coin) => `<li>${coin.id}</li>`)
+    .join("") || "No coins left";
 
   popupDiv.innerHTML = `
     <div>Cache at ${cacheKey} contains:
       <ul id="coinList">
-        ${cacheCoins.map((coin) => `<li>${coin.id}</li>`).join("")}
+        ${coinListHtml}
       </ul>
     </div>
     <button id="collect">Collect</button>
@@ -138,9 +143,9 @@ function createCachePopup(cacheKey: string, cacheCoins: { id: string }[]) {
 
 // Handle collect action
 function handleCollect(cacheKey: string) {
-  const cache = caches.get(cacheKey)!;
-  if (cache.coins > 0) {
-    cache.coins--;
+  const cache = caches.get(cacheKey);
+  if (cache && cache.coins.length > 0) {
+    cache.coins.pop(); // Remove a coin from the cache
     playerCoins++;
     updateStatusPanel();
   }
@@ -148,9 +153,10 @@ function handleCollect(cacheKey: string) {
 
 // Handle deposit action
 function handleDeposit(cacheKey: string) {
-  const cache = caches.get(cacheKey)!;
-  if (playerCoins > 0) {
-    cache.coins++;
+  const cache = caches.get(cacheKey);
+  if (cache && playerCoins > 0) {
+    const newCoin = { id: `${cacheKey}#${cache.coins.length}` };
+    cache.coins.push(newCoin); // Add a new coin to the cache
     playerCoins--;
     updateStatusPanel();
   }
@@ -158,8 +164,12 @@ function handleDeposit(cacheKey: string) {
 
 // Update popup UI
 function updatePopupUI(cacheKey: string, popupDiv: HTMLDivElement) {
-  popupDiv.querySelector<HTMLSpanElement>("#cacheCoins")!.innerText = caches
-    .get(cacheKey)!.coins.toString();
+  const cache = caches.get(cacheKey);
+  const coinListHtml = cache?.coins
+    .map((coin) => `<li>${coin.id}</li>`)
+    .join("") || "No coins left";
+  popupDiv.querySelector<HTMLUListElement>("#coinList")!.innerHTML =
+    coinListHtml;
 }
 
 // Update the status panel
