@@ -23,9 +23,12 @@ const OAKES_GRID = { i: 369894, j: -1220627 };
 
 // Player state
 let playerCoins = INITIAL_PLAYER_COINS;
+const playerPosition = { ...OAKES_GRID };
 
 // Cache state
 const caches: Map<string, { coins: { id: string }[] }> = new Map();
+const knownTiles = new Map<string, boolean>(); // Tracks which tiles are generated
+const cacheMementos = new Map<string, { coins: { id: string }[] }>(); // Memento pattern
 
 // Flyweight to cache grid-to-LatLng conversion
 const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
@@ -33,7 +36,7 @@ const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
 // Initialize the map
 function initializeMap() {
   const map = leaflet.map(document.getElementById("map")!, {
-    center: gridToLatLng(OAKES_GRID),
+    center: gridToLatLng(playerPosition),
     zoom: GAMEPLAY_ZOOM_LEVEL,
     minZoom: GAMEPLAY_ZOOM_LEVEL,
     maxZoom: GAMEPLAY_ZOOM_LEVEL,
@@ -52,14 +55,17 @@ function initializeMap() {
   addPlayerMarker(map);
   spawnCaches(map);
 
+  initializeMovementButtons(map);
+
   return map;
 }
 
 // Add player marker
 function addPlayerMarker(map: leaflet.Map) {
-  const playerMarker = leaflet.marker(gridToLatLng(OAKES_GRID));
+  const playerMarker = leaflet.marker(gridToLatLng(playerPosition));
   playerMarker.bindTooltip("That's you!");
   playerMarker.addTo(map);
+  playerMarker.setZIndexOffset(1000); // Ensure player marker is above other elements
 }
 
 // Convert grid coordinates to LatLng
@@ -88,17 +94,22 @@ function calculateCacheBounds(i: number, j: number) {
 function spawnCache(map: leaflet.Map, i: number, j: number) {
   const bounds = calculateCacheBounds(i, j);
   const cacheKey = `${i},${j}`;
-  const coinCount = Math.max(
-    1,
-    Math.floor(luck([i, j, "coins"].toString()) * 10),
-  );
 
-  // Generate unique coin identities
-  const cacheCoins = Array.from({ length: coinCount }, (_, serial) => ({
-    id: `${cacheKey}#${serial}`,
-  }));
+  if (cacheMementos.has(cacheKey)) {
+    caches.set(cacheKey, cacheMementos.get(cacheKey)!);
+  } else {
+    const coinCount = Math.max(
+      1,
+      Math.floor(luck([i, j, "coins"].toString()) * 10),
+    );
 
-  caches.set(cacheKey, { coins: cacheCoins });
+    const cacheCoins = Array.from({ length: coinCount }, (_, serial) => ({
+      id: `${cacheKey}#${serial}`,
+    }));
+
+    caches.set(cacheKey, { coins: cacheCoins });
+    cacheMementos.set(cacheKey, { coins: cacheCoins });
+  }
 
   const rect = leaflet.rectangle(bounds).addTo(map);
   rect.bindPopup(() => createCachePopup(cacheKey));
@@ -181,20 +192,64 @@ function updateStatusPanel() {
 // Spawn caches in the neighborhood
 function spawnCaches(map: leaflet.Map) {
   for (
-    let i = OAKES_GRID.i - NEIGHBORHOOD_SIZE;
-    i < OAKES_GRID.i + NEIGHBORHOOD_SIZE;
+    let i = playerPosition.i - NEIGHBORHOOD_SIZE;
+    i < playerPosition.i + NEIGHBORHOOD_SIZE;
     i++
   ) {
     for (
-      let j = OAKES_GRID.j - NEIGHBORHOOD_SIZE;
-      j < OAKES_GRID.j + NEIGHBORHOOD_SIZE;
+      let j = playerPosition.j - NEIGHBORHOOD_SIZE;
+      j < playerPosition.j + NEIGHBORHOOD_SIZE;
       j++
     ) {
-      if (luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY) {
+      const cacheKey = `${i},${j}`;
+      if (
+        !knownTiles.has(cacheKey) &&
+        luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY
+      ) {
         spawnCache(map, i, j);
+        knownTiles.set(cacheKey, true);
       }
     }
   }
+}
+
+// Initialize the movement buttons
+function initializeMovementButtons(map: leaflet.Map) {
+  const controls = document.createElement("div");
+  controls.id = "controls";
+  controls.innerHTML = `
+    <button id="moveUp">⬆️</button>
+    <button id="moveLeft">⬅️</button>
+    <button id="moveRight">➡️</button>
+    <button id="moveDown">⬇️</button>
+  `;
+  document.body.appendChild(controls);
+
+  document.querySelector("#moveUp")!.addEventListener(
+    "click",
+    () => movePlayer(map, 1, 0),
+  );
+  document.querySelector("#moveDown")!.addEventListener(
+    "click",
+    () => movePlayer(map, -1, 0),
+  );
+  document.querySelector("#moveLeft")!.addEventListener(
+    "click",
+    () => movePlayer(map, 0, -1),
+  );
+  document.querySelector("#moveRight")!.addEventListener(
+    "click",
+    () => movePlayer(map, 0, 1),
+  );
+}
+
+// Move the player and regenerate caches
+function movePlayer(map: leaflet.Map, di: number, dj: number) {
+  playerPosition.i += di; // Modify the properties of the object
+  playerPosition.j += dj;
+  map.setView(gridToLatLng(playerPosition), GAMEPLAY_ZOOM_LEVEL);
+
+  spawnCaches(map); // Regenerate caches for the new position
 }
 
 // Initialize the status panel
