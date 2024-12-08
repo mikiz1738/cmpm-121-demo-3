@@ -27,12 +27,14 @@ const playerPosition = { ...OAKES_GRID };
 let playerMarker: leaflet.Marker;
 
 // Player movement
-let movementHistory: leaflet.Polyline;
+let movementHistory: leaflet.Polyline | null = null;
 
 // Cache state
 const caches: Map<string, { coins: { id: string }[] }> = new Map();
 const knownTiles = new Map<string, boolean>(); // Tracks which tiles are generated
 const cacheMementos = new Map<string, { coins: { id: string }[] }>(); // Memento pattern
+// Cache layer group to manage all cache overlays on the map
+const cacheLayerGroup = leaflet.layerGroup();
 
 // Flyweight to cache grid-to-LatLng conversion
 const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
@@ -106,16 +108,47 @@ function initializeAutoLocationButton(map: leaflet.Map) {
   });
 }
 
-function initializeResetButton() {
-  const resetButton = document.createElement("button");
-  resetButton.textContent = "🚮";
-  document.body.appendChild(resetButton);
+function initializeResetButton(map: leaflet.Map) {
+  const button = document.createElement("button");
+  button.textContent = "🚮";
+  button.style.margin = "10px";
+  document.body.appendChild(button);
 
-  resetButton.addEventListener("click", () => {
-    if (confirm("Reset the game?")) {
-      localStorage.clear();
-      globalThis.location.reload();
+  button.addEventListener("click", () => {
+    // Step 1: Reset player state
+    playerCoins = INITIAL_PLAYER_COINS; // Reset coins to initial value
+    playerPosition.i = OAKES_GRID.i; // Reset i coordinate
+    playerPosition.j = OAKES_GRID.j; // Reset j coordinate
+
+    // Step 2: Clear and restore caches
+    caches.clear(); // Clear the current cache state
+    cacheLayerGroup.clearLayers(); // Remove all cache layers from the map
+    knownTiles.clear(); // Clear the known tiles
+
+    for (const [key, value] of cacheMementos.entries()) {
+      caches.set(key, JSON.parse(JSON.stringify(value))); // Restore original caches
     }
+
+    // Step 3: Clear and reset movement history
+    if (movementHistory) {
+      map.removeLayer(movementHistory); // Remove movement history polyline
+      movementHistory = null; // Reset movement history
+    }
+
+    // Step 4: Reset map view and player marker to Oakes
+    const oakesLatLng = gridToLatLng(OAKES_GRID);
+    map.setView(oakesLatLng, GAMEPLAY_ZOOM_LEVEL);
+    playerMarker.setLatLng(oakesLatLng);
+
+    // Step 5: Update the status panel
+    updateStatusPanel();
+
+    // Step 6: Regenerate visible caches
+    spawnCaches(map);
+
+    alert(
+      "Game has been reset. You are back at Oakes, and caches have been restored.",
+    );
   });
 }
 
@@ -152,7 +185,7 @@ function initializeMap() {
   initializeAutoLocationButton(map);
   spawnCaches(map);
   initializeMovementButtons(map);
-  initializeResetButton();
+  initializeResetButton(map);
 
   return map;
 }
@@ -192,9 +225,8 @@ function spawnCache(map: leaflet.Map, i: number, j: number) {
   const bounds = calculateCacheBounds(i, j);
   const cacheKey = `${i},${j}`;
 
-  if (cacheMementos.has(cacheKey)) {
-    caches.set(cacheKey, cacheMementos.get(cacheKey)!);
-  } else {
+  if (!cacheMementos.has(cacheKey)) {
+    // Only generate a new cache if it doesn't already exist in cacheMementos
     const coinCount = Math.max(
       1,
       Math.floor(luck([i, j, "coins"].toString()) * 10),
@@ -204,12 +236,17 @@ function spawnCache(map: leaflet.Map, i: number, j: number) {
       id: `${cacheKey}#${serial}`,
     }));
 
-    caches.set(cacheKey, { coins: cacheCoins });
+    // Save original cache state to cacheMementos
     cacheMementos.set(cacheKey, { coins: cacheCoins });
   }
 
-  const rect = leaflet.rectangle(bounds).addTo(map);
+  // Restore cache state from cacheMementos
+  caches.set(cacheKey, JSON.parse(JSON.stringify(cacheMementos.get(cacheKey))));
+
+  const rect = leaflet.rectangle(bounds);
   rect.bindPopup(() => createCachePopup(cacheKey));
+  rect.addTo(cacheLayerGroup); // Add to cache layer group
+  cacheLayerGroup.addTo(map);
 }
 
 // Create popup content with coin identity
@@ -340,25 +377,37 @@ function initializeMovementButtons(map: leaflet.Map) {
   );
 }
 
+// Function to initialize or update movement history
+function updateMovementHistory(map: leaflet.Map, newPosition: leaflet.LatLng) {
+  if (!movementHistory) {
+    // First time: create the polyline and add it to the map
+    movementHistory = leaflet.polyline([newPosition], { color: "blue" }).addTo(
+      map,
+    );
+  } else {
+    // Append new position to existing polyline
+    const latLngs = movementHistory.getLatLngs() as leaflet.LatLng[];
+    latLngs.push(newPosition);
+    movementHistory.setLatLngs(latLngs);
+  }
+}
+
 // Move the player and regenerate caches
 function movePlayer(map: leaflet.Map, di: number, dj: number) {
-  // Update player's position
+  // Update player's grid position
   playerPosition.i += di;
   playerPosition.j += dj;
 
-  // Update the map's center and the player's marker
+  // Update map view and player marker
   const newLatLng = gridToLatLng(playerPosition);
   map.setView(newLatLng, GAMEPLAY_ZOOM_LEVEL);
-  playerMarker.setLatLng(newLatLng); // Update marker position
+  playerMarker.setLatLng(newLatLng);
 
-  // Regenerate caches for the new position
+  // Track movement history
+  updateMovementHistory(map, newLatLng);
+
+  // Regenerate caches
   spawnCaches(map);
-
-  updateMovementHistory();
-
-  function updateMovementHistory() {
-    movementHistory.addLatLng(gridToLatLng(playerPosition));
-  }
 }
 
 // Initialize the status panel
