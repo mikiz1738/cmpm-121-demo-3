@@ -67,6 +67,54 @@ function loadGameState() {
 
 globalThis.addEventListener("beforeunload", saveGameState);
 
+function initializeMovementHistory(map: leaflet.Map) {
+  movementHistory = leaflet.polyline([], { color: "blue" }).addTo(map);
+}
+
+function initializeAutoLocationButton(map: leaflet.Map) {
+  const button = document.createElement("button");
+  button.textContent = "🌐";
+  button.style.margin = "10px";
+  document.body.appendChild(button);
+
+  let watchId: number | null = null;
+  button.addEventListener("click", () => {
+    if (watchId === null) {
+      // Start watching the user's geolocation
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const gridCoords = latLngToGrid(
+            leaflet.latLng(pos.coords.latitude, pos.coords.longitude),
+          );
+          playerPosition.i = gridCoords.i;
+          playerPosition.j = gridCoords.j;
+
+          // Update player position on the map
+          movePlayer(map, 0, 0);
+        },
+        (error) => {
+          alert("Geolocation error: " + error.message);
+        },
+      );
+      button.style.backgroundColor = "lightgreen";
+    } else {
+      // Stop watching geolocation
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      button.style.backgroundColor = "";
+    }
+  });
+}
+
+// Convert LatLng to grid coordinates
+function latLngToGrid(latLng: leaflet.LatLng) {
+  const origin = leaflet.latLng(0, 0); // Null Island
+  return {
+    i: Math.round((latLng.lat - origin.lat) / TILE_DEGREES),
+    j: Math.round((latLng.lng - origin.lng) / TILE_DEGREES),
+  };
+}
+
 // Initialize the map
 function initializeMap() {
   const map = leaflet.map(document.getElementById("map")!, {
@@ -78,10 +126,6 @@ function initializeMap() {
     scrollWheelZoom: false,
   });
 
-  function initializeMovementHistory(map: leaflet.Map) {
-    movementHistory = leaflet.polyline([], { color: "blue" }).addTo(map);
-  }
-
   leaflet
     .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -92,6 +136,7 @@ function initializeMap() {
 
   addPlayerMarker(map);
   initializeMovementHistory(map);
+  initializeAutoLocationButton(map);
   spawnCaches(map);
 
   initializeMovementButtons(map);
