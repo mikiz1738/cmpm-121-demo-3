@@ -1,4 +1,3 @@
-//D3.b-c complete
 // @deno-types="npm:@types/leaflet@^1.9.14"
 import leaflet from "leaflet";
 
@@ -34,6 +33,36 @@ const cacheMementos = new Map<string, { coins: { id: string }[] }>(); // Memento
 
 // Flyweight to cache grid-to-LatLng conversion
 const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
+
+// Persistent Storage
+function saveGameState() {
+  const gameState = {
+    playerPosition,
+    playerCoins,
+    caches: Array.from(caches.entries()),
+  };
+  localStorage.setItem("gameState", JSON.stringify(gameState));
+}
+
+function loadGameState() {
+  const savedState = localStorage.getItem("gameState");
+  if (savedState) {
+    const {
+      playerPosition: savedPos,
+      playerCoins: coins,
+      caches: savedCaches,
+    } = JSON.parse(savedState);
+    Object.assign(playerPosition, savedPos);
+    playerCoins = coins;
+    caches.clear();
+    // deno-lint-ignore no-explicit-any
+    savedCaches.forEach(([key, value]: [string, any]) =>
+      caches.set(key, value)
+    );
+  }
+}
+
+globalThis.addEventListener("beforeunload", saveGameState);
 
 // Initialize the map
 function initializeMap() {
@@ -268,6 +297,7 @@ function initializeStatusPanel() {
 
 // Main entry point
 function main() {
+  loadGameState(); // Load saved game state
   initializeStatusPanel();
   initializeMap();
 }
