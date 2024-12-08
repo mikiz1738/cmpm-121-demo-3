@@ -26,6 +26,9 @@ let playerCoins = INITIAL_PLAYER_COINS;
 const playerPosition = { ...OAKES_GRID };
 let playerMarker: leaflet.Marker;
 
+// Player movement
+let movementHistory: leaflet.Polyline;
+
 // Cache state
 const caches: Map<string, { coins: { id: string }[] }> = new Map();
 const knownTiles = new Map<string, boolean>(); // Tracks which tiles are generated
@@ -75,6 +78,10 @@ function initializeMap() {
     scrollWheelZoom: false,
   });
 
+  function initializeMovementHistory(map: leaflet.Map) {
+    movementHistory = leaflet.polyline([], { color: "blue" }).addTo(map);
+  }
+
   leaflet
     .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -84,6 +91,7 @@ function initializeMap() {
     .addTo(map);
 
   addPlayerMarker(map);
+  initializeMovementHistory(map);
   spawnCaches(map);
 
   initializeMovementButtons(map);
@@ -287,6 +295,12 @@ function movePlayer(map: leaflet.Map, di: number, dj: number) {
 
   // Regenerate caches for the new position
   spawnCaches(map);
+
+  updateMovementHistory();
+
+  function updateMovementHistory() {
+    movementHistory.addLatLng(gridToLatLng(playerPosition));
+  }
 }
 
 // Initialize the status panel
