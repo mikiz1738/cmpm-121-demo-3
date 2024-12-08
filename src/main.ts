@@ -106,6 +106,19 @@ function initializeAutoLocationButton(map: leaflet.Map) {
   });
 }
 
+function initializeResetButton() {
+  const resetButton = document.createElement("button");
+  resetButton.textContent = "🚮";
+  document.body.appendChild(resetButton);
+
+  resetButton.addEventListener("click", () => {
+    if (confirm("Reset the game?")) {
+      localStorage.clear();
+      globalThis.location.reload();
+    }
+  });
+}
+
 // Convert LatLng to grid coordinates
 function latLngToGrid(latLng: leaflet.LatLng) {
   const origin = leaflet.latLng(0, 0); // Null Island
@@ -138,8 +151,8 @@ function initializeMap() {
   initializeMovementHistory(map);
   initializeAutoLocationButton(map);
   spawnCaches(map);
-
   initializeMovementButtons(map);
+  initializeResetButton();
 
   return map;
 }
