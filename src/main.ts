@@ -193,26 +193,34 @@ function latLngToGrid(latLng: leaflet.LatLng) {
   };
 }
 
-// Initialize the map
-function initializeMap() {
-  const map = leaflet.map(document.getElementById("map")!, {
-    center: gridToLatLng(playerPosition),
+function createMap(
+  containerId: string,
+  initialPosition: { i: number; j: number },
+) {
+  const map = leaflet.map(containerId, {
+    center: gridToLatLng(initialPosition),
     zoom: GAMEPLAY_ZOOM_LEVEL,
     minZoom: GAMEPLAY_ZOOM_LEVEL,
     maxZoom: GAMEPLAY_ZOOM_LEVEL,
-    zoomControl: false,
-    scrollWheelZoom: false,
   });
+  leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution:
+      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+  return map;
+}
 
-  leaflet
-    .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    })
-    .addTo(map);
+function addMarkerToMap(map: leaflet.Map, position: { i: number; j: number }) {
+  const marker = leaflet.marker(gridToLatLng(position));
+  marker.addTo(map);
+  return marker;
+}
 
-  addPlayerMarker(map);
+// Initialize the map
+function initializeMap() {
+  const map = createMap("map", playerPosition);
+  playerMarker = addMarkerToMap(map, playerPosition);
   initializeMovementHistory(map);
   initializeAutoLocationButton(map);
   spawnCaches(map);
@@ -220,14 +228,6 @@ function initializeMap() {
   initializeResetButton(map);
 
   return map;
-}
-
-// Add player marker
-function addPlayerMarker(map: leaflet.Map) {
-  playerMarker = leaflet.marker(gridToLatLng(playerPosition)); // Initialize the marker
-  playerMarker.bindTooltip("That's you!");
-  playerMarker.addTo(map);
-  playerMarker.setZIndexOffset(1000); // Ensure player marker is above other elements
 }
 
 // Convert grid coordinates to LatLng
@@ -424,8 +424,11 @@ function updateMovementHistory(map: leaflet.Map, newPosition: leaflet.LatLng) {
   }
 }
 
-// Move the player and regenerate caches
-function movePlayer(map: leaflet.Map, di: number, dj: number) {
+function updatePlayerPositionAndMarker(
+  map: leaflet.Map,
+  di: number,
+  dj: number,
+): leaflet.LatLng {
   // Update player's grid position
   playerPosition.i += di;
   playerPosition.j += dj;
@@ -435,10 +438,17 @@ function movePlayer(map: leaflet.Map, di: number, dj: number) {
   map.setView(newLatLng, GAMEPLAY_ZOOM_LEVEL);
   playerMarker.setLatLng(newLatLng);
 
-  // Track movement history
-  updateMovementHistory(map, newLatLng);
+  return newLatLng; // Return new position for further use
+}
 
-  // Regenerate caches
+// Move the player and regenerate caches
+function movePlayer(map: leaflet.Map, di: number, dj: number) {
+  const newLatLng = updatePlayerPositionAndMarker(map, di, dj); // Step 1
+  updateMovementHistory(map, newLatLng); // Step 2
+  regenerateVisibleCaches(map); // Step 3
+}
+
+function regenerateVisibleCaches(map: leaflet.Map) {
   spawnCaches(map);
 }
 
