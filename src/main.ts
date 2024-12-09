@@ -41,11 +41,20 @@ const cellLatLngCache = new Map<string, leaflet.LatLngBounds>();
 
 // Persistent Storage
 function saveGameState() {
+  const movementHistoryLatLngs = movementHistory
+    ? (movementHistory.getLatLngs() as leaflet.LatLng[]).map((latLng) => ({
+      lat: latLng.lat,
+      lng: latLng.lng,
+    }))
+    : [];
+
   const gameState = {
     playerPosition,
     playerCoins,
-    caches: Array.from(caches.entries()),
+    caches: Array.from(caches.entries()), // Save current state of caches
+    movementHistory: movementHistoryLatLngs,
   };
+
   localStorage.setItem("gameState", JSON.stringify(gameState));
 }
 
@@ -56,21 +65,44 @@ function loadGameState() {
       playerPosition: savedPos,
       playerCoins: coins,
       caches: savedCaches,
+      movementHistory: savedHistory,
+    }: {
+      playerPosition: typeof playerPosition;
+      playerCoins: number;
+      caches: [string, { coins: { id: string }[] }][];
+      movementHistory: { lat: number; lng: number }[];
     } = JSON.parse(savedState);
+
+    // Restore player state
     Object.assign(playerPosition, savedPos);
     playerCoins = coins;
+
+    // Restore caches
     caches.clear();
-    // deno-lint-ignore no-explicit-any
-    savedCaches.forEach(([key, value]: [string, any]) =>
-      caches.set(key, value)
-    );
+    savedCaches.forEach(([key, value]) => {
+      caches.set(key, value); // Repopulate the caches map
+    });
+
+    // Restore movement history
+    if (Array.isArray(savedHistory)) {
+      movementHistory = leaflet.polyline(
+        savedHistory.map(({ lat, lng }) => leaflet.latLng(lat, lng)),
+        { color: "blue" },
+      );
+    }
   }
 }
 
 globalThis.addEventListener("beforeunload", saveGameState);
 
 function initializeMovementHistory(map: leaflet.Map) {
-  movementHistory = leaflet.polyline([], { color: "blue" }).addTo(map);
+  if (movementHistory) {
+    // If movement history is already restored, add it to the map
+    movementHistory.addTo(map);
+  } else {
+    // Otherwise, initialize a new movement history polyline
+    movementHistory = leaflet.polyline([], { color: "blue" }).addTo(map);
+  }
 }
 
 function initializeAutoLocationButton(map: leaflet.Map) {
@@ -420,7 +452,12 @@ function initializeStatusPanel() {
 function main() {
   loadGameState(); // Load saved game state
   initializeStatusPanel();
-  initializeMap();
+
+  const map = initializeMap();
+
+  if (movementHistory) {
+    movementHistory.addTo(map); // Add restored movement history to the map
+  }
 }
 
 main();
